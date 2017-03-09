@@ -20,6 +20,6 @@ func PostJson(url string, payload []byte) (response []byte, err error) {
 	}
 	defer resp.Body.Close()
 
-	resp, err = ioutil.ReadAll(resp.Body)
+	response, err = ioutil.ReadAll(resp.Body)
 	return
 }

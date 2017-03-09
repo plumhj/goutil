@@ -9,7 +9,7 @@ import (
 func PostJson(url string, payload []byte) (response []byte, err error) {
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
 	if err != nil {
-		panic(err)
+		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 

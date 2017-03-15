@@ -24,13 +24,13 @@ type SQS struct {
 
 func NewSQS(url string) Queue {
 	sess := session.Must(session.NewSession(&aws.Config{Region: aws.String("ap-northeast-2")}))
-	return SQS{
+	return &SQS{
 		client: sqs.New(sess),
 		url:    url,
 	}
 }
 
-func (q SQS) Put(obj interface{}) (err error) {
+func (q *SQS) Put(obj interface{}) (err error) {
 
 	data, err := json.Marshal(obj)
 	if err != nil {
@@ -54,7 +54,7 @@ func (q SQS) Put(obj interface{}) (err error) {
 	return
 }
 
-func (q SQS) Get(obj interface{}) (id string, err error) {
+func (q *SQS) Get(obj interface{}) (id string, err error) {
 	params := sqs.ReceiveMessageInput{
 		QueueUrl: aws.String(q.url),
 	}
@@ -76,7 +76,7 @@ func (q SQS) Get(obj interface{}) (id string, err error) {
 	return
 }
 
-func (q SQS) Del(id string) (err error) {
+func (q *SQS) Del(id string) (err error) {
 	params := &sqs.DeleteMessageInput{
 		QueueUrl:    aws.String(q.url),
 		ReceiptHandle: aws.String(id),

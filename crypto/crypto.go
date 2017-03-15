@@ -22,11 +22,6 @@ type AESCrypto struct {
 }
 
 func NewAESCFB(key, iv string) (Crypto, error) {
-	ivb := []byte(iv)
-	if len(ivb) < aes.BlockSize {
-		return nil, errors.New("iv length error, length >= 16")
-	}
-	ivb = ivb[:aes.BlockSize]
 
 	keyb := []byte(key)
 	if len(keyb) >= 32 {
@@ -38,6 +33,12 @@ func NewAESCFB(key, iv string) (Crypto, error) {
 	}else{
 		return nil, errors.New("key length error, length >= 16")
 	}
+
+	ivb := []byte(iv)
+	if len(ivb) < aes.BlockSize {
+		copy(ivb, keyb)
+	}
+	ivb = ivb[:aes.BlockSize]
 
 	aesBlockEncrypter, err := aes.NewCipher(keyb)
 	if err != nil {

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"encoding/binary"
 	"encoding/base64"
-	"strings"
+	"crypto/sha256"
 )
 
 type Crypto interface {
@@ -56,27 +56,23 @@ func (c *AESCrypto) Encrypt(data []byte) []byte {
 	return buff
 }
 
-func (c *AESCrypto) EncryptInt64ToBase64String(i int64) string {
-	buff := make([]byte, 8)
-	binary.LittleEndian.PutUint64(buff, uint64(i))
-	buff2 := make([]byte, 8)
-	cipher.NewCFBEncrypter(c.block, c.iv).XORKeyStream(buff2, buff)
-	return strings.Replace(base64.URLEncoding.EncodeToString(buff2), "=", "", -1)
-}
-
 func (c *AESCrypto) Decrypt(data []byte) []byte {
 	buff := make([]byte, len(data))
 	cipher.NewCFBDecrypter(c.block, c.iv).XORKeyStream(buff, data)
 	return buff
 }
 
+func (c *AESCrypto) EncryptInt64ToBase64String(i int64) string {
+	buff := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buff, uint64(i))
+	buff2 := make([]byte, 8)
+	cipher.NewCFBEncrypter(c.block, c.iv).XORKeyStream(buff2, buff)
+	return base64.RawURLEncoding.EncodeToString(buff2)
+}
+
 func (c *AESCrypto) DecryptBase64StringToInt64(data string) (int64, error) {
 
-	if l := len(data) % 4; l != 0 {
-		data += strings.Repeat("=", 4-l)
-	}
-
-	buff, err := base64.URLEncoding.DecodeString(data)
+	buff, err := base64.RawURLEncoding.DecodeString(data)
 	if err != nil {
 		return -1, err
 	}
@@ -86,4 +82,9 @@ func (c *AESCrypto) DecryptBase64StringToInt64(data string) (int64, error) {
 
 	var i int64 = int64(binary.LittleEndian.Uint64(dst))
 	return i, nil
+}
+
+func GetSha256AsBase64String(str string) string {
+	data := sha256.Sum256([]byte(str))
+	return base64.RawURLEncoding.EncodeToString(data[:])
 }

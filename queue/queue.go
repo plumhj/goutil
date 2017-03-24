@@ -22,8 +22,8 @@ type SQS struct {
 	WaitTimeout int64
 }
 
-func NewSQS(url string) Queue {
-	sess := session.Must(session.NewSession(&aws.Config{Region: aws.String("ap-northeast-2")}))
+func NewSQS(url, region string) Queue {
+	sess := session.Must(session.NewSession(&aws.Config{Region: aws.String(region)}))
 	return &SQS{
 		client: sqs.New(sess),
 		url:    url,

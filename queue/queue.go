@@ -1,13 +1,17 @@
 package queue
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
-	"encoding/json"
-	"errors"
-	"fmt"
+	"io/ioutil"
+	"time"
+	"log"
 )
 
 type Queue interface {
@@ -16,29 +20,69 @@ type Queue interface {
 	Del(string) error
 }
 
-type SQS struct {
-	client sqsiface.SQSAPI
-	url    string
-	WaitTimeout int64
+type Qobject struct {
+	ID       string
+	JsonData string
 }
 
-func NewSQS(url, region string) Queue {
+type SQS struct {
+	id          string
+	sss         *s3.S3
+	client      sqsiface.SQSAPI
+	url         string
+	bucket      string
+	waitTimeout int64
+}
+
+func NewSQS(id, url, bucket, region string) Queue {
 	sess := session.Must(session.NewSession(&aws.Config{Region: aws.String(region)}))
 	return &SQS{
+		id:     id,
+		sss:    s3.New(sess),
 		client: sqs.New(sess),
 		url:    url,
+		bucket: bucket,
 	}
 }
 
 func (q *SQS) Put(obj interface{}) (err error) {
 
+	qo := Qobject{}
 	data, err := json.Marshal(obj)
 	if err != nil {
-		return
+		return err
 	}
 
-	if len(data) > 1024 * 256 {
-		return errors.New("obj size limit, max : 256KB")
+	qo.JsonData = string(data)
+
+	if len(data)+128 > 1024*256 {
+		qo.ID = fmt.Sprintf("%s:%d", q.id, time.Now().UnixNano())
+
+		log.Println(qo.ID)
+
+		json, err := json.Marshal(qo)
+		if err != nil {
+			return err
+		}
+
+		params := &s3.PutObjectInput{
+			Bucket:      aws.String(q.bucket), // Required
+			Key:         aws.String(qo.ID),    // Required
+			Body:        bytes.NewReader(json),
+			ContentType: aws.String("application/json"),
+		}
+
+		_, err = q.sss.PutObject(params)
+		if err != nil {
+			return err
+		}
+
+		qo.JsonData = ""
+	}
+
+	data, err = json.Marshal(qo)
+	if err != nil {
+		return err
 	}
 
 	params := &sqs.SendMessageInput{
@@ -47,9 +91,6 @@ func (q *SQS) Put(obj interface{}) (err error) {
 	}
 
 	_, err = q.client.SendMessage(params)
-	if err != nil {
-		return
-	}
 
 	return
 }
@@ -58,19 +99,47 @@ func (q *SQS) Get(obj interface{}) (id string, err error) {
 	params := sqs.ReceiveMessageInput{
 		QueueUrl: aws.String(q.url),
 	}
-	if q.WaitTimeout > 0 {
-		params.WaitTimeSeconds = aws.Int64(q.WaitTimeout)
+	if q.waitTimeout > 0 {
+		params.WaitTimeSeconds = aws.Int64(q.waitTimeout)
 	}
 	resp, err := q.client.ReceiveMessage(&params)
 	if err != nil {
 		return "", fmt.Errorf("failed to get messages, %v", err)
 	}
 
+	qo := Qobject{}
 	for _, msg := range resp.Messages {
 		//log.Println(msg)
-		if err := json.Unmarshal([]byte(aws.StringValue(msg.Body)), &obj); err != nil {
+		if err := json.Unmarshal([]byte(aws.StringValue(msg.Body)), &qo); err != nil {
 			return "", fmt.Errorf("failed to unmarshal message, %v", err)
 		}
+
+		if qo.JsonData == "" {
+
+			p := &s3.GetObjectInput{
+				Bucket: aws.String(q.bucket), // Required
+				Key:    aws.String(qo.ID),    // Required
+			}
+			resp, err := q.sss.GetObject(p)
+			if err != nil {
+				return "", fmt.Errorf("failed to get s3 object, %v", err)
+			}
+
+			data, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return "", fmt.Errorf("failed to get s3 object, %v", err)
+			}
+
+			if err := json.Unmarshal(data, &qo); err != nil {
+				return "", fmt.Errorf("failed to unmarshal s3 object, %v", err)
+			}
+
+		}
+
+		if err := json.Unmarshal([]byte(qo.JsonData), &obj); err != nil {
+			return "", fmt.Errorf("failed to unmarshal message, %v", err)
+		}
+
 		id = *msg.ReceiptHandle
 	}
 	return
@@ -78,7 +147,7 @@ func (q *SQS) Get(obj interface{}) (id string, err error) {
 
 func (q *SQS) Del(id string) (err error) {
 	params := &sqs.DeleteMessageInput{
-		QueueUrl:    aws.String(q.url),
+		QueueUrl:      aws.String(q.url),
 		ReceiptHandle: aws.String(id),
 	}
 

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"bytes"
 	"io/ioutil"
+	"encoding/json"
 )
 
 func PostJson(url string, payload []byte) (response []byte, err error) {
@@ -22,4 +23,21 @@ func PostJson(url string, payload []byte) (response []byte, err error) {
 
 	response, err = ioutil.ReadAll(resp.Body)
 	return
+}
+
+func ReadJson(r *http.Request, v interface{}) error {
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+
+	err = json.Unmarshal(body, v)
+	if err != nil {
+		return err
+	}
+
+	r.Body.Close()
+
+	return nil
 }

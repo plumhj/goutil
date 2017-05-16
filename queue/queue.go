@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
 	"io/ioutil"
 	"time"
-	"log"
+	"sync/atomic"
 )
 
 type Queue interface {
@@ -21,27 +21,34 @@ type Queue interface {
 }
 
 type Qobject struct {
-	ID       string
-	JsonData string
+	ID       string `json:"id"`
+	JsonData string `json:"jsonData"`
 }
 
 type SQS struct {
-	id          string
-	sss         *s3.S3
-	client      sqsiface.SQSAPI
-	url         string
-	bucket      string
-	waitTimeout int64
+	id           string
+	sss          *s3.S3
+	//s3Downloader *s3manager.Downloader
+	//s3Uploader   *s3manager.Uploader
+	client       sqsiface.SQSAPI
+	url          string
+	bucket       string
+	waitTimeout  int64
+	seq          int64
 }
 
 func NewSQS(id, url, bucket, region string) Queue {
 	sess := session.Must(session.NewSession(&aws.Config{Region: aws.String(region)}))
+	//s3Uploader := s3manager.NewUploader(sess)
+	//s3Downloader := s3manager.NewDownloader(sess)
 	return &SQS{
-		id:     id,
-		sss:    s3.New(sess),
-		client: sqs.New(sess),
-		url:    url,
-		bucket: bucket,
+		id:           id,
+		sss:          s3.New(sess),
+		//s3Downloader: s3Downloader,
+		//s3Uploader:   s3Uploader,
+		client:       sqs.New(sess),
+		url:          url,
+		bucket:       bucket,
 	}
 }
 
@@ -56,9 +63,8 @@ func (q *SQS) Put(obj interface{}) (err error) {
 	qo.JsonData = string(data)
 
 	if len(data)+128 > 1024*256 {
-		qo.ID = fmt.Sprintf("%s:%d", q.id, time.Now().UnixNano())
-
-		log.Println(qo.ID)
+		s := atomic.AddInt64(&q.seq, 1)
+		qo.ID = fmt.Sprintf("%s:%d:%d", q.id, time.Now().UnixNano(), s)
 
 		json, err := json.Marshal(qo)
 		if err != nil {
@@ -72,6 +78,7 @@ func (q *SQS) Put(obj interface{}) (err error) {
 			ContentType: aws.String("application/json"),
 		}
 
+		//_, err = q.s3Uploader.Upload(params)
 		_, err = q.sss.PutObject(params)
 		if err != nil {
 			return err
